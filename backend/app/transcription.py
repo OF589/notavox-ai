@@ -8,9 +8,12 @@ from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
 from faster_whisper import WhisperModel
 
 DEFAULT_MODEL = os.getenv("NOTAVOX_WHISPER_MODEL", "small")
+SAMPLE_RATE = 16_000  # fréquence attendue par Whisper
 
 
 @dataclass
@@ -43,6 +46,25 @@ class TranscriptionResult:
         return data
 
 
+def load_audio(audio_path: Path) -> np.ndarray:
+    """Lit un fichier audio (WAV, FLAC, OGG, MP3) en mono 16 kHz."""
+    try:
+        data, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
+    except sf.LibsndfileError as exc:
+        raise ValueError(
+            f"Format non pris en charge : {audio_path.suffix}. "
+            "Utilise un fichier WAV, FLAC, OGG ou MP3."
+        ) from exc
+
+    audio = data.mean(axis=1)  # stéréo -> mono
+    if sr != SAMPLE_RATE:      # rééchantillonnage simple vers 16 kHz
+        n = int(len(audio) * SAMPLE_RATE / sr)
+        audio = np.interp(
+            np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio
+        ).astype(np.float32)
+    return audio
+
+
 @lru_cache(maxsize=2)
 def load_model(model_size: str = DEFAULT_MODEL) -> WhisperModel:
     """Charge le modèle une seule fois (GPU NVIDIA si disponible, sinon CPU)."""
@@ -65,8 +87,9 @@ def transcribe(
     model = load_model(model_size)
     start = time.perf_counter()
 
+    audio = load_audio(audio_path)
     segments_iter, info = model.transcribe(
-        str(audio_path),
+        audio,
         language=language,
         vad_filter=True,   # ignore les silences
         beam_size=5,

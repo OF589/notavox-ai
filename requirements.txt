@@ -1,2 +1,5 @@
 faster-whisper==1.1.1
 requests
+sounddevice
+soundfile
+numpy
