@@ -1,0 +1,13 @@
+# Environnement Python
+venv/
+__pycache__/
+*.pyc
+
+# Fichiers audio et résultats (données personnelles : jamais sur GitHub)
+samples/*
+!samples/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Secrets
+.env
