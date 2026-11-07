@@ -3,3 +3,5 @@ requests
 sounddevice
 soundfile
 numpy
+pyannote.audio
+python-dotenv
