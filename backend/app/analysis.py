@@ -19,6 +19,14 @@ LANGUAGES = {
     "es": "Spanish",
 }
 
+# Valeur à utiliser quand un responsable ou une échéance n'est pas mentionné
+UNSPECIFIED = {
+    "fr": "Non précisé",
+    "en": "Not specified",
+    "ar": "غير محدد",
+    "es": "No especificado",
+}
+
 # Structure imposée au LLM (Ollama garantit un JSON conforme à ce schéma)
 SCHEMA = {
     "type": "object",
@@ -50,10 +58,14 @@ Rules:
 - Use ONLY information present in the transcript. Never invent people, dates or tasks.
 - summary: 2 to 4 sentences describing the meeting.
 - key_points: the main topics discussed.
-- decisions: what was decided. Empty list if nothing was decided.
-- tasks: concrete actions someone must do. "owner" is the person responsible and
-  "deadline" the due date as said in the meeting; if not mentioned, write the word
-  "unspecified" translated into the output language.
+- decisions: what the group agreed on. Every sentence such as "we decided",
+  "on a décidé", "it was agreed", "قررنا" or "decidimos" MUST produce a decision.
+  Empty list only if nothing was decided.
+- tasks: concrete actions assigned to someone. "owner" is the person responsible and
+  "deadline" the due date as said in the meeting. If the owner or the deadline is
+  not mentioned, write exactly "{unspecified}".
+- A decision is not a task: do not repeat a decision in the tasks list unless a
+  person is explicitly assigned to carry it out.
 - Write ALL text in {language}, whatever the language of the transcript.
 - Answer with JSON only."""
 
@@ -88,11 +100,12 @@ def analyze(
     if not transcript.strip():
         raise ValueError("La transcription est vide.")
     language = LANGUAGES.get(output_language, output_language)
+    unspecified = UNSPECIFIED.get(output_language, "Not specified")
 
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT.format(language=language)},
+            {"role": "system", "content": SYSTEM_PROMPT.format(language=language, unspecified=unspecified)},
             {"role": "user", "content": f"Transcript:\n{transcript}"},
         ],
         "format": SCHEMA,
@@ -117,5 +130,14 @@ def analyze(
         summary=data["summary"],
         key_points=data["key_points"],
         decisions=data["decisions"],
-        tasks=[Task(**t) for t in data["tasks"]],
+        tasks=[_clean_task(t, unspecified) for t in data["tasks"]],
     )
+
+
+def _clean_task(raw: dict, unspecified: str) -> Task:
+    """Remplace les valeurs vides ou "unspecified" par la mention traduite."""
+    def fix(value: str) -> str:
+        value = (value or "").strip()
+        return unspecified if value.lower() in {"", "unspecified", "none", "n/a"} else value
+
+    return Task(task=raw["task"].strip(), owner=fix(raw["owner"]), deadline=fix(raw["deadline"]))
