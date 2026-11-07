@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.analysis import DEFAULT_MODEL, analyze  # noqa: E402
+from app.analysis import analyze, choose_model  # noqa: E402
 
 
 def main() -> None:
@@ -19,15 +19,16 @@ def main() -> None:
     parser.add_argument("transcription", help="fichier JSON produit par transcribe.py")
     parser.add_argument("--lang", default="fr",
                         help="langue du compte rendu : fr, en, ar, es (défaut : fr)")
-    parser.add_argument("--model", default=DEFAULT_MODEL,
-                        help="modèle Ollama (défaut : %(default)s)")
+    parser.add_argument("--model", default=None,
+                        help="modèle Ollama (défaut : choisi selon la langue)")
     args = parser.parse_args()
 
     source = Path(args.transcription)
-    transcript = json.loads(source.read_text(encoding="utf-8"))["text"]
+    data = json.loads(source.read_text(encoding="utf-8"))
+    model = args.model or choose_model(data.get("language"))
 
-    print(f"Analyse avec '{args.model}', compte rendu en '{args.lang}'...\n")
-    result = analyze(transcript, output_language=args.lang, model=args.model)
+    print(f"Analyse avec '{model}', compte rendu en '{args.lang}'...\n")
+    result = analyze(data["text"], output_language=args.lang, model=model)
 
     print("📝 RÉSUMÉ")
     print(result.summary, "\n")

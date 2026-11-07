@@ -10,7 +10,14 @@ from dataclasses import asdict, dataclass, field
 import requests
 
 OLLAMA_URL = os.getenv("NOTAVOX_OLLAMA_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.getenv("NOTAVOX_LLM_MODEL", "qwen2.5:3b")
+DEFAULT_MODEL = os.getenv("NOTAVOX_LLM_MODEL", "qwen2.5:7b")
+# Modèle plus grand pour les langues où le petit modèle se trompe (mesuré)
+MODEL_BY_LANGUAGE = {"ar": os.getenv("NOTAVOX_LLM_MODEL_AR", "qwen2.5:7b")}
+
+
+def choose_model(source_language: str | None) -> str:
+    """Choisit le modèle selon la langue parlée dans la réunion."""
+    return MODEL_BY_LANGUAGE.get(source_language or "", DEFAULT_MODEL)
 
 LANGUAGES = {
     "fr": "French",
@@ -66,8 +73,23 @@ Rules:
   not mentioned, write exactly "{unspecified}".
 - A decision is not a task: do not repeat a decision in the tasks list unless a
   person is explicitly assigned to carry it out.
+- Keep deadlines exactly as spoken (for example "Friday" or "next Monday"),
+  translated into the output language. NEVER convert them into calendar dates.
+- If a sentence is unclear, leave it out rather than guessing.
+- Copy the names of people and projects EXACTLY as written in the transcript.
+- A decision is a choice made by the group. "X will do Y" is a task, not a decision.
 - Write ALL text in {language}, whatever the language of the transcript.
-- Answer with JSON only."""
+- Answer with JSON only.
+
+Example (structure only, never reuse its content):
+Transcript: "Hi all. Karim will prepare the budget for Tuesday. We decided to
+postpone the launch to June. Someone also needs to book the room."
+Answer:
+{{"summary": "The team reviewed the budget and the launch date. The launch was postponed to June.",
+ "key_points": ["Budget preparation", "Launch date", "Room booking"],
+ "decisions": ["Postpone the launch to June"],
+ "tasks": [{{"task": "Prepare the budget", "owner": "Karim", "deadline": "Tuesday"}},
+           {{"task": "Book the room", "owner": "{unspecified}", "deadline": "{unspecified}"}}]}}"""
 
 
 @dataclass
@@ -94,13 +116,15 @@ class MeetingAnalysis:
 def analyze(
     transcript: str,
     output_language: str = "fr",
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
+    source_language: str | None = None,
 ) -> MeetingAnalysis:
     """Envoie la transcription au LLM et renvoie une analyse structurée."""
     if not transcript.strip():
         raise ValueError("La transcription est vide.")
     language = LANGUAGES.get(output_language, output_language)
     unspecified = UNSPECIFIED.get(output_language, "Not specified")
+    model = model or choose_model(source_language)
 
     payload = {
         "model": model,
